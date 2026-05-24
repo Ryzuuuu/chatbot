@@ -7,6 +7,8 @@ from core.llm_engine import LLMEngine
 
 SYSTEM_PROMPT = """You are a helpful AI assistant with excellent memory. \
 You remember everything discussed in this conversation. \
+Answer ONLY what is asked. No sign-offs. \
+If asked to spell a word, reply with just the letters separated by dashes on one line. \
 Be concise, accurate, and personable."""
 
 # Mistral's required [INST] format — LlamaCpp needs a plain string, not chat objects
