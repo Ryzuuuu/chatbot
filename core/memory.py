@@ -17,21 +17,21 @@ class MemoryFactory:
     def buffer() -> ConversationBufferMemory:
         """Full history — good for short sessions."""
         return ConversationBufferMemory(
-            memory_key="chat_history", return_messages=True
+            memory_key="history", return_messages=False  # ← "history" matches prompt var
         )
 
     @staticmethod
     def window(k: int = 5) -> ConversationBufferWindowMemory:
         """Last k turns only — good for long sessions."""
         return ConversationBufferWindowMemory(
-            k=k, memory_key="chat_history", return_messages=True
+            k=k, memory_key="history", return_messages=False
         )
 
     @staticmethod
     def summary(llm) -> ConversationSummaryMemory:
         """Summarizes old turns — token-efficient."""
         return ConversationSummaryMemory(
-            llm=llm, memory_key="chat_history", return_messages=True
+            llm=llm, memory_key="history", return_messages=False
         )
 
     @staticmethod
@@ -40,8 +40,8 @@ class MemoryFactory:
         return ConversationSummaryBufferMemory(
             llm=llm,
             max_token_limit=max_token_limit,
-            memory_key="chat_history",
-            return_messages=True
+            memory_key="history",
+            return_messages=False  # ← plain string, not message objects
         )
 
     @staticmethod

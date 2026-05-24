@@ -1,16 +1,23 @@
-from langchain.chains import ConversationChain
-from langchain_core.prompts import (
-    ChatPromptTemplate,
-    MessagesPlaceholder,
-    SystemMessagePromptTemplate,
-    HumanMessagePromptTemplate,
-)
+import sys, os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from langchain_classic.chains import ConversationChain
+from langchain_core.prompts import PromptTemplate
 from core.memory import MemoryFactory
 from core.llm_engine import LLMEngine
 
-SYSTEM_PROMPT = """You are a helpful AI assistant with excellent memory.
-You remember everything discussed in this conversation.
+SYSTEM_PROMPT = """You are a helpful AI assistant with excellent memory. \
+You remember everything discussed in this conversation. \
 Be concise, accurate, and personable."""
+
+# Mistral's required [INST] format — LlamaCpp needs a plain string, not chat objects
+MISTRAL_PROMPT = PromptTemplate(
+    input_variables=["history", "input"],
+    template=(
+        f"[INST] {SYSTEM_PROMPT}\n\n"
+        "Conversation so far:\n{history}\n\n"
+        "Human: {input} [/INST]"
+    )
+)
 
 class ChatbotChain:
     def __init__(self, memory_type: str = "summary_buffer", llm=None):
@@ -31,15 +38,10 @@ class ChatbotChain:
             return MemoryFactory.summary_buffer(self.llm)
 
     def _build_chain(self) -> ConversationChain:
-        prompt = ChatPromptTemplate.from_messages([
-            SystemMessagePromptTemplate.from_template(SYSTEM_PROMPT),
-            MessagesPlaceholder(variable_name="chat_history"),
-            HumanMessagePromptTemplate.from_template("{input}"),
-        ])
         return ConversationChain(
             llm=self.llm,
             memory=self.memory,
-            prompt=prompt,
+            prompt=MISTRAL_PROMPT,
             verbose=False
         )
 
@@ -51,3 +53,24 @@ class ChatbotChain:
 
     def clear(self):
         self.memory.clear()
+
+if __name__ == "__main__":
+    print("Loading model mistralai/Mistral-7B-Instruct-v0.2...")
+    bot = ChatbotChain(memory_type="summary_buffer")
+
+    while True:
+        try:
+            user_input = input("You: ").strip()
+        except (EOFError, KeyboardInterrupt):
+            print("\nGoodbye!")
+            break
+
+        if not user_input:
+            continue
+
+        if user_input.lower() in ("quit", "exit", "bye"):
+            print("Goodbye!")
+            break
+
+        response = bot.chat(user_input)
+        print(f"Bot: {response}")

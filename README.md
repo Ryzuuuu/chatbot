@@ -9,7 +9,8 @@
 
 | Capability | Detail |
 |------------|--------|
-| LLM backend | HuggingFace `Mistral-7B-Instruct-v0.2` (GPU) or Ollama `mistral` (CPU) |
+| LLM backend | `Mistral-7B-Instruct-v0.2` via LlamaCpp (GGUF, CPU) or Ollama `mistral` (CPU) |
+| Quantization | Q4_K_M — ~4.5GB RAM, full Mistral-7B weights |
 | Memory strategies | Buffer · Window · Summary · SummaryBuffer · VectorStore |
 | Vector store | ChromaDB with `sentence-transformers/all-MiniLM-L6-v2` embeddings |
 | Interface | PowerShell / Command Prompt (REPL loop) |
@@ -23,12 +24,14 @@
 C:\Projects\chatbot\
 ├── core\
 │   ├── __init__.py
-│   ├── llm_engine.py       ← loads HuggingFace or Ollama LLM
+│   ├── llm_engine.py       ← loads LlamaCpp (GGUF) or Ollama LLM
 │   ├── memory.py           ← MemoryFactory (5 memory types)
-│   └── chain.py            ← ChatbotChain (wraps LLM + memory)
+│   └── chain.py            ← ChatbotChain (wraps LLM + memory + Mistral prompt)
+├── models\
+│   └── mistral-7b-instruct-v0.2.Q4_K_M.gguf   ← download separately (4.4GB)
 ├── chatbot-env\            ← Python virtual environment
 ├── requirements.txt
-└── .env                    ← HF_TOKEN, DJANGO_SECRET_KEY, REDIS_URL
+└── .env                    ← DJANGO_SECRET_KEY, REDIS_URL (HF_TOKEN no longer needed)
 ```
 
 ---
@@ -40,9 +43,9 @@ C:\Projects\chatbot\
 | Python | 3.11.x | https://python.org/downloads — tick **Add to PATH** |
 | Git | Any | https://git-scm.com/download/win |
 | VS Code | Any | https://code.visualstudio.com |
-| CUDA Toolkit | 12.x | https://developer.nvidia.com/cuda-downloads — **only if NVIDIA GPU** |
 
-> **No GPU?** Use Ollama (free, CPU-friendly). Download: https://ollama.com/download/windows
+> **No GPU required.** Mistral-7B runs fully on CPU via GGUF quantization.  
+> Minimum RAM: **14GB total** (close other apps before running).
 
 ---
 
@@ -64,53 +67,65 @@ chatbot-env\Scripts\activate
 python -m pip install --upgrade pip
 
 # 4. Install dependencies
-pip install langchain langchain-community langchain-core langchain-huggingface transformers torch torchvision sentence-transformers faiss-cpu chromadb python-dotenv
+pip install llama-cpp-python langchain-community langchain-core langchain-huggingface sentence-transformers chromadb python-dotenv
 ```
 
-> **torch install note:** If the above fails, go to https://pytorch.org/get-started/locally,
-> select your OS/CUDA/Python combination, and copy the exact `pip install` command shown.
+---
+
+## Download the Model
+
+Download the GGUF model file (~4.4GB) in your browser and save to `C:\Projects\chatbot\models\`:
+
+```
+https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf
+```
+
+Create the folder first if it doesn't exist:
+
+```powershell
+mkdir C:\Projects\chatbot\models
+```
 
 ---
 
 ## Configuration
 
-Create and fill `.env` at `C:\Projects\chatbot\.env`:
+Create `.env` at `C:\Projects\chatbot\.env`:
 
 ```env
-HF_TOKEN=hf_your_token_here
 DJANGO_SECRET_KEY=placeholder_not_used_yet
 REDIS_URL=redis://localhost:6379
 ```
 
-Get your free HuggingFace token at: https://huggingface.co/settings/tokens
+> `HF_TOKEN` is no longer needed — the model runs from the local GGUF file.
 
 ---
 
-## Run — Option A: HuggingFace (GPU recommended)
+## Run
 
 ```powershell
 cd C:\Projects\chatbot
 chatbot-env\Scripts\activate
 
-# Start the REPL chat loop
 python core\chain.py
 ```
 
 Expected output:
 ```
 Loading model mistralai/Mistral-7B-Instruct-v0.2...
+Loading model from C:\Projects\chatbot\models\mistral-7b-instruct-v0.2.Q4_K_M.gguf...
 You: Hello, my name is Alex
 Bot: Hi Alex! Nice to meet you. How can I help you today?
 
 You: What is my name?
-Bot: Your name is Alex — you just told me!
+Bot: Your name is Alex.
 
 You: quit
 ```
 
 ---
 
-## Run — Option B: Ollama (CPU, no GPU needed)
+## Run — Option B: Ollama (alternative CPU option)
 
 ```powershell
 # Step 1 — Install Ollama from https://ollama.com/download/windows
@@ -154,7 +169,6 @@ Switch the `memory_type` argument in `ChatbotChain(memory_type=...)` to try each
 | Vector store | `"vector"` | Semantic search over past turns | Very low |
 
 ```powershell
-# Try a specific memory type
 python -c "
 from core.chain import ChatbotChain
 bot = ChatbotChain(memory_type='window')  # change to: buffer, summary, vector
@@ -187,10 +201,12 @@ Both should print `OK` with no errors.
 |-------|-------|-----|
 | `'python' is not recognized` | Python not in PATH | Reinstall Python, tick **Add to PATH** |
 | `ModuleNotFoundError: langchain` | venv not active | Run `chatbot-env\Scripts\activate` |
-| `torch` install hangs or fails | No CUDA match | Use `pip install torch --index-url https://download.pytorch.org/whl/cpu` |
-| `CUDA out of memory` | GPU too small for 7B model | Set `device_map="cpu"` in `llm_engine.py` or switch to Ollama |
+| `FileNotFoundError: .gguf not found` | Model not downloaded | Download the `.gguf` file and place in `models\` |
+| `RuntimeWarning: duplicate leading <s>` | Old prompt template | LlamaCpp adds `<s>` automatically — do not include it in the template |
+| Bot continues conversation on its own | Missing stop tokens | Ensure `stop=["Human:", "\nHuman:"]` is set in `LlamaCpp(...)` |
 | `(chatbot-env)` not in prompt | venv not activated | Run `chatbot-env\Scripts\activate` again |
 | ChromaDB permission error | Antivirus blocking | Temporarily disable real-time protection or change `CHROMA_PATH` |
+| Out of memory crash | Not enough free RAM | Close browser and all apps — need ~5GB free |
 
 ---
 
