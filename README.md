@@ -1,7 +1,7 @@
-# MemoryBot v0.1 — Core LLM + Memory Engine
+# MemoryBot v0.2 — FastAPI REST Layer
 
-> **Local console chatbot with pluggable LangChain memory strategies.**  
-> No server, no UI — just pure Python. Build and validate the brain before adding any layers on top.
+> **Local chatbot with pluggable LangChain memory, now served over HTTP.**  
+> Core LLM + memory from v0.1, wrapped in a FastAPI REST API with session management.
 
 ---
 
@@ -13,15 +13,22 @@
 | Quantization | Q4_K_M — ~4.5GB RAM, full Mistral-7B weights |
 | Memory strategies | Buffer · Window · Summary · SummaryBuffer · VectorStore |
 | Vector store | ChromaDB with `sentence-transformers/all-MiniLM-L6-v2` embeddings |
-| Interface | PowerShell / Command Prompt (REPL loop) |
+| API | FastAPI REST — `/chat`, `/chat/{id}/history`, `/chat/{id}` DELETE |
+| Session management | Per-user `ChatbotChain` instances, auto-generated session IDs |
+| Interface | HTTP (browser, curl, any client) + Swagger UI at `/docs` |
 | Persistence | ChromaDB on local disk (`%USERPROFILE%\chatbot_chroma_db\`) |
 
 ---
 
-## Project Structure (this version)
+## Project Structure
 
 ```
 C:\Projects\chatbot\
+├── api\
+│   ├── __init__.py
+│   ├── main.py             ← FastAPI app entry point
+│   ├── routes.py           ← /chat, /history, /health endpoints
+│   └── session_store.py    ← per-user ChatbotChain instances
 ├── core\
 │   ├── __init__.py
 │   ├── llm_engine.py       ← loads LlamaCpp (GGUF) or Ollama LLM
@@ -31,7 +38,7 @@ C:\Projects\chatbot\
 │   └── mistral-7b-instruct-v0.2.Q4_K_M.gguf   ← download separately (4.4GB)
 ├── chatbot-env\            ← Python virtual environment
 ├── requirements.txt
-└── .env                    ← DJANGO_SECRET_KEY, REDIS_URL (HF_TOKEN no longer needed)
+└── .env
 ```
 
 ---
@@ -51,53 +58,23 @@ C:\Projects\chatbot\
 
 ## Installation
 
-Open **PowerShell** and run every command below in order.
-
 ```powershell
-# 1. Create project root
-mkdir C:\Projects\chatbot
 cd C:\Projects\chatbot
-
-# 2. Create and activate virtual environment
-python -m venv chatbot-env
 chatbot-env\Scripts\activate
-# Prompt now shows: (chatbot-env) PS C:\Projects\chatbot>
 
-# 3. Upgrade pip
-python -m pip install --upgrade pip
-
-# 4. Install dependencies
-pip install llama-cpp-python langchain-community langchain-core langchain-huggingface sentence-transformers chromadb python-dotenv
+# Install new dependencies (on top of v0.1)
+pip install fastapi uvicorn pydantic redis
 ```
 
 ---
 
 ## Download the Model
 
-Download the GGUF model file (~4.4GB) in your browser and save to `C:\Projects\chatbot\models\`:
+Download the GGUF model file (~4.4GB) and save to `C:\Projects\chatbot\models\`:
 
 ```
 https://huggingface.co/TheBloke/Mistral-7B-Instruct-v0.2-GGUF/resolve/main/mistral-7b-instruct-v0.2.Q4_K_M.gguf
 ```
-
-Create the folder first if it doesn't exist:
-
-```powershell
-mkdir C:\Projects\chatbot\models
-```
-
----
-
-## Configuration
-
-Create `.env` at `C:\Projects\chatbot\.env`:
-
-```env
-DJANGO_SECRET_KEY=placeholder_not_used_yet
-REDIS_URL=redis://localhost:6379
-```
-
-> `HF_TOKEN` is no longer needed — the model runs from the local GGUF file.
 
 ---
 
@@ -107,91 +84,50 @@ REDIS_URL=redis://localhost:6379
 cd C:\Projects\chatbot
 chatbot-env\Scripts\activate
 
-python core\chain.py
+uvicorn api.main:app --reload --port 8000
 ```
 
 Expected output:
 ```
-Loading model mistralai/Mistral-7B-Instruct-v0.2...
-Loading model from C:\Projects\chatbot\models\mistral-7b-instruct-v0.2.Q4_K_M.gguf...
-You: Hello, my name is Alex
-Bot: Hi Alex! Nice to meet you. How can I help you today?
-
-You: What is my name?
-Bot: Your name is Alex.
-
-You: quit
+INFO:     Uvicorn running on http://127.0.0.1:8000 (Press CTRL+C to quit)
+INFO:     Application startup complete.
 ```
 
 ---
 
-## Run — Option B: Ollama (alternative CPU option)
+## Test via Swagger UI
 
-```powershell
-# Step 1 — Install Ollama from https://ollama.com/download/windows
-# Step 2 — Pull the model (one-time, ~4 GB download)
-ollama pull mistral
+Go to `http://127.0.0.1:8000/docs` in your browser.
 
-# Step 3 — Start Ollama server (keep this window open)
-ollama serve
-
-# Step 4 — In a NEW PowerShell window, run the bot
-cd C:\Projects\chatbot
-chatbot-env\Scripts\activate
-python -c "
-from core.llm_engine import LLMEngine
-from core.chain import ChatbotChain
-
-llm = LLMEngine.load_ollama()
-bot = ChatbotChain(memory_type='summary_buffer', llm=llm)
-
-while True:
-    user = input('You: ')
-    if user.lower() == 'quit':
-        break
-    print(f'Bot: {bot.chat(user)}')
-    print()
-"
+**Start a conversation:**
+1. Open **POST /chat** → Click **Try it out**
+2. Send a message (leave `session_id` empty — it auto-generates):
+```json
+{
+  "message": "Hi my name is Neel"
+}
 ```
+3. Copy the `session_id` from the response
+
+**Test memory:**
+```json
+{
+  "session_id": "paste-id-here",
+  "message": "What is my name?"
+}
+```
+Bot should reply: `Neel`
 
 ---
 
-## Memory Types — Quick Comparison
+## API Endpoints
 
-Switch the `memory_type` argument in `ChatbotChain(memory_type=...)` to try each:
-
-| Type | Argument | Best For | Token Cost |
-|------|----------|----------|------------|
-| Full buffer | `"buffer"` | Short sessions < 10 turns | High |
-| Sliding window | `"window"` | Medium sessions, keeps last 6 turns | Medium |
-| Summary | `"summary"` | Long sessions, compresses everything | Low |
-| Summary + buffer | `"summary_buffer"` | **Recommended** — balances recall + cost | Low-medium |
-| Vector store | `"vector"` | Semantic search over past turns | Very low |
-
-```powershell
-python -c "
-from core.chain import ChatbotChain
-bot = ChatbotChain(memory_type='window')  # change to: buffer, summary, vector
-while True:
-    u = input('You: ')
-    if u.lower() == 'quit': break
-    print(f'Bot: {bot.chat(u)}')
-"
-```
-
----
-
-## Verify Imports Work
-
-```powershell
-cd C:\Projects\chatbot
-chatbot-env\Scripts\activate
-
-python -c "from core.memory import MemoryFactory; print('memory.py OK')"
-python -c "from core.chain import ChatbotChain; print('chain.py OK')"
-```
-
-Both should print `OK` with no errors.
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/chat` | Send a message, get a reply |
+| GET | `/chat/{session_id}/history` | Get full conversation history |
+| DELETE | `/chat/{session_id}` | Clear a session |
+| GET | `/health` | Health check |
 
 ---
 
@@ -199,23 +135,21 @@ Both should print `OK` with no errors.
 
 | Error | Cause | Fix |
 |-------|-------|-----|
-| `'python' is not recognized` | Python not in PATH | Reinstall Python, tick **Add to PATH** |
-| `ModuleNotFoundError: langchain` | venv not active | Run `chatbot-env\Scripts\activate` |
-| `FileNotFoundError: .gguf not found` | Model not downloaded | Download the `.gguf` file and place in `models\` |
-| `RuntimeWarning: duplicate leading <s>` | Old prompt template | LlamaCpp adds `<s>` automatically — do not include it in the template |
-| Bot continues conversation on its own | Missing stop tokens | Ensure `stop=["Human:", "\nHuman:"]` is set in `LlamaCpp(...)` |
-| `(chatbot-env)` not in prompt | venv not activated | Run `chatbot-env\Scripts\activate` again |
-| ChromaDB permission error | Antivirus blocking | Temporarily disable real-time protection or change `CHROMA_PATH` |
+| `{"detail":"Not Found"}` at `/` | No root route | Go to `/docs` instead |
+| `FileNotFoundError: .gguf not found` | Model not downloaded | Download and place in `models\` |
+| Bot adds filler sentences | Prompt behavior | Tighten system prompt in `chain.py` |
 | Out of memory crash | Not enough free RAM | Close browser and all apps — need ~5GB free |
+| `(chatbot-env)` not in prompt | venv not activated | Run `chatbot-env\Scripts\activate` |
 
 ---
 
-## What's Coming Next
+## Roadmap
 
-| Version | Adds |
-|---------|------|
-| **v0.2** | FastAPI REST endpoints — chat over HTTP, session IDs, Redis persistence |
-| v0.3 | Django web UI with WebSocket streaming |
-| v0.4 | Image upload + OpenCV + BLIP captioning |
-| v0.5 | Docker + Docker Compose |
-| v0.6 | AWS / GCP cloud deployment |
+| Version | Focus | Status |
+|---------|-------|--------|
+| v0.1 | Core LLM + Memory (local console) | ✅ Done |
+| **v0.2** | **FastAPI REST layer + session management** | ✅ Done |
+| v0.3 | Django web UI + WebSocket streaming | 🔜 Next |
+| v0.4 | Image upload + OpenCV + BLIP captioning | — |
+| v0.5 | Docker + Docker Compose | — |
+| v0.6 | AWS / GCP cloud deployment | — |
