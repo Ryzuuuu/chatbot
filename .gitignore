@@ -1,5 +1,19 @@
-chatbot-env/
+# Python
 __pycache__/
 *.pyc
-.env
+*.pyo
+chatbot-env/
+
+# Django
+db.sqlite3
+staticfiles/
+
+# Models
 models/
+
+# Environment
+.env
+
+# ChromaDB
+chroma_db/
+chatbot_chroma_db/
