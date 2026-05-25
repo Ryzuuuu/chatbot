@@ -25,7 +25,7 @@ class LLMEngine:
             n_threads=6,
             n_gpu_layers=0,      # Pure CPU — no GPU needed
             temperature=0.7,
-            max_tokens=512,
+            max_tokens=1024,
             verbose=False,
             stop=["Human:", "\nHuman:", "You:", "\nYou:"],
         )

@@ -5,11 +5,10 @@ from langchain_core.prompts import PromptTemplate
 from core.memory import MemoryFactory
 from core.llm_engine import LLMEngine
 
-SYSTEM_PROMPT = """You are a helpful AI assistant with excellent memory. \
-You remember everything discussed in this conversation. \
-Answer ONLY what is asked. No sign-offs. \
-If asked to spell a word, reply with just the letters separated by dashes on one line. \
-Be concise, accurate, and personable."""
+SYSTEM_PROMPT = """You are a concise, helpful AI assistant with excellent memory.
+You remember everything discussed in this conversation.
+Keep responses under 5 sentences unless the user explicitly asks for detail.
+Answer ONLY what is asked. No follow-up questions. No sign-offs. No filler."""
 
 # Mistral's required [INST] format — LlamaCpp needs a plain string, not chat objects
 MISTRAL_PROMPT = PromptTemplate(
